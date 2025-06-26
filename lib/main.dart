@@ -1563,6 +1563,10 @@ class _TodoCalendarAppState extends State<TodoCalendarApp> {
   String newTodoSelectedGroupId = '';
   final TextEditingController newTodoController = TextEditingController();
 
+  String newTodoTextInSelector = '';
+  String selectedGroupIdInSelector = '';
+  final TextEditingController newTodoSelectorController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -1830,9 +1834,11 @@ class _TodoCalendarAppState extends State<TodoCalendarApp> {
 void _addTodoToSchedule(Todo todo, String scheduleKey) {
   if (!mounted) return;
   
-  // 중복 체크 개선 - 팝업으로 확인 후 수정 옵션 제공
-  if (scheduledTodos.containsKey(scheduleKey) && scheduledTodos[scheduleKey]!.isNotEmpty) {
-    // 🔧 기존 일정이 있을 때 확인 다이얼로그 표시
+  // 🔧 월간 뷰인지 확인 (날짜 키 형식: YYYY-M-D)
+  final isMonthlyView = scheduleKey.split('-').length == 3;
+  
+  // 주간/일간 뷰에서는 기존 로직 유지 (중복 체크)
+  if (!isMonthlyView && scheduledTodos.containsKey(scheduleKey) && scheduledTodos[scheduleKey]!.isNotEmpty) {
     final existingTodo = scheduledTodos[scheduleKey]!.first;
     
     showDialog(
@@ -1847,8 +1853,8 @@ void _addTodoToSchedule(Todo todo, String scheduleKey) {
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context); // 알림 다이얼로그 닫기
-              _showScheduleOptionsDialog(scheduleKey, existingTodo); // 수정 옵션 다이얼로그 열기
+              Navigator.pop(context);
+              _showScheduleOptionsDialog(scheduleKey, existingTodo);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
@@ -1864,12 +1870,16 @@ void _addTodoToSchedule(Todo todo, String scheduleKey) {
     return;
   }
   
-  // 기존 일정 추가 로직은 그대로
+  // 🔧 월간 뷰에서는 중복 체크 없이 바로 추가
   setState(() {
     if (!scheduledTodos.containsKey(scheduleKey)) {
       scheduledTodos[scheduleKey] = [];
     }
-    scheduledTodos[scheduleKey]!.add(todo);
+    
+    // 🔧 중복 방지: 같은 할 일이 이미 해당 날짜에 있는지만 체크
+    if (!scheduledTodos[scheduleKey]!.any((existingTodo) => existingTodo.id == todo.id)) {
+      scheduledTodos[scheduleKey]!.add(todo);
+    }
   });
   
   _saveData().then((_) {
@@ -1893,6 +1903,7 @@ void _addTodoToSchedule(Todo todo, String scheduleKey) {
     }
   });
 }
+
   void _showTodoSelector(String scheduleKey) {
     if (todos.isEmpty) {
       _showAlert('알림', '먼저 할 일을 추가해주세요.');
@@ -1987,13 +1998,13 @@ void _addTodoToSchedule(Todo todo, String scheduleKey) {
             ),
             const SizedBox(height: 10),
             
-            // 일정 추가 버튼
+            // 🔧 일정 추가 버튼 (항상 표시)
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () {
                   Navigator.pop(context);
-                  _showTodoSelector(dateKey);
+                  _showTodoSelector(dateKey); // 🔧 바로 일정 추가
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -2013,7 +2024,7 @@ void _addTodoToSchedule(Todo todo, String scheduleKey) {
             
             // 일정 목록
             Text(
-              '일정 목록 (${dayTodos.length}개)',
+              '일정 목록 (${dayTodos.length}개)', // 🔧 개수 표시
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -2070,13 +2081,23 @@ void _addTodoToSchedule(Todo todo, String scheduleKey) {
                           ),
                           child: Row(
                             children: [
-                              // 그룹 색상 인디케이터
+                              // 순서 번호
                               Container(
-                                width: 4,
-                                height: 40,
+                                width: 24,
+                                height: 24,
                                 decoration: BoxDecoration(
                                   color: group?.color ?? Colors.blue,
-                                  borderRadius: BorderRadius.circular(2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '${index + 1}', // 🔧 순서 번호 표시
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -2121,7 +2142,7 @@ void _addTodoToSchedule(Todo todo, String scheduleKey) {
                               // 삭제 버튼
                               IconButton(
                                 onPressed: () {
-                                  _showDeleteEventDialog(dateKey, todo);
+                                  _showDeleteEventDialog(dateKey, todo, index); // 🔧 인덱스 추가
                                 },
                                 icon: const Icon(
                                   Icons.delete_outline,
@@ -2143,6 +2164,7 @@ void _addTodoToSchedule(Todo todo, String scheduleKey) {
   );
 }
 
+
 // 3. 날짜 키 포맷팅 함수
 String _formatDateKey(String dateKey) {
   final parts = dateKey.split('-');
@@ -2156,12 +2178,12 @@ String _formatDateKey(String dateKey) {
 }
 
 // 4. 일정 삭제 확인 다이얼로그
-void _showDeleteEventDialog(String dateKey, Todo todo) {
+void _showDeleteEventDialog(String dateKey, Todo todo, int index) {
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('일정 삭제'),
-      content: Text('"${todo.text}" 일정을 삭제하시겠습니까?'),
+      content: Text('${index + 1}번째 일정 "${todo.text}"를 삭제하시겠습니까?'), // 🔧 순서 정보 추가
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
@@ -2187,6 +2209,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
   );
 }
 
+
   // 날짜 계산 개선
   DateTime _getWeekStart(DateTime date) {
     final weekday = date.weekday;
@@ -2195,23 +2218,23 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
 
   // 스와이프 제스처가 포함된 월간 캘린더
   Widget _buildSwipeableMonthCalendar() {
-    return GestureDetector(
-      onPanEnd: (details) {
-        if (details.velocity.pixelsPerSecond.dx > 300) {
-          // 오른쪽 스와이프 - 이전 달
-          setState(() {
-            currentMonth = DateTime(currentMonth.year, currentMonth.month - 1);
-          });
-        } else if (details.velocity.pixelsPerSecond.dx < -300) {
-          // 왼쪽 스와이프 - 다음 달
-          setState(() {
-            currentMonth = DateTime(currentMonth.year, currentMonth.month + 1);
-          });
-        }
-      },
-      child: _renderMonthCalendar(),
-    );
-  }
+  return GestureDetector(
+    onPanEnd: (details) {
+      if (details.velocity.pixelsPerSecond.dx > 300) {
+        // 오른쪽 스와이프 - 이전 달
+        setState(() {
+          currentMonth = DateTime(currentMonth.year, currentMonth.month - 1);
+        });
+      } else if (details.velocity.pixelsPerSecond.dx < -300) {
+        // 왼쪽 스와이프 - 다음 달
+        setState(() {
+          currentMonth = DateTime(currentMonth.year, currentMonth.month + 1);
+        });
+      }
+    },
+    child: _renderMonthCalendar(), // 🔧 업데이트된 함수 사용
+  );
+}
 
   Widget _renderMonthCalendar() {
   final year = currentMonth.year;
@@ -2267,7 +2290,8 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
     
     calendarDays.add(
       GestureDetector(
-        onTap: () => _showDayEventDialog(dateKey),
+        onTap: () => _showDayEventDialog(dateKey), // 🔧 기존 상세 보기 유지
+        onLongPress: () => _showTodoSelector(dateKey), // 🔧 길게 누르면 바로 일정 추가
         child: Container(
           height: 80,
           decoration: BoxDecoration(
@@ -2296,7 +2320,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                   ),
                 ),
               ),
-              // 일정 개수 표시
+              // 🔧 일정 개수 표시
               Expanded(
                 child: Center(
                   child: dayTodos.isNotEmpty
@@ -2307,7 +2331,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            '+${dayTodos.length}',
+                            '+${dayTodos.length}', // 🔧 개수만 표시
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -2344,7 +2368,8 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
   );
 }
 
- Widget _renderWeekSchedule() {
+
+Widget _renderWeekSchedule() {
   // currentWeekDate 기준으로 주간 시작일 계산
   final weekStart = _getWeekStart(currentWeekDate);
   const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
@@ -2352,7 +2377,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
   
   return Column(
     children: [
-      // 주간 네비게이션 헤더 추가
+      // 주간 네비게이션 헤더
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         child: Row(
@@ -2391,7 +2416,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
           ],
         ),
       ),
-      // 기존 주간 스케줄
+      // 주간 스케줄
       Expanded(
         child: Column(
           children: [
@@ -2441,7 +2466,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                 }),
               ],
             ),
-            // 시간별 스케줄
+            // 시간별 스케줄 (높이 증가 + 개선된 탭 동작)
             Expanded(
               child: ListView.builder(
                 itemCount: hours.length,
@@ -2451,7 +2476,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                     children: [
                       Container(
                         width: 60,
-                        height: 70,
+                        height: 90, // 기존 70에서 90으로 증가
                         color: Colors.grey.shade100,
                         child: Center(
                           child: Text(
@@ -2475,7 +2500,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                         
                         return Expanded(
                           child: Container(
-                            height: 70,
+                            height: 90, // 높이 증가
                             decoration: BoxDecoration(
                               border: Border.all(
                                 color: Colors.grey.shade300,
@@ -2484,31 +2509,40 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                             ),
                             child: Column(
                               children: [
-                                // 0-30분 슬롯
-                                  Expanded(
-                                    child: Material(  // ← 이 부분 추가!
-                                      color: Colors.transparent,
-                                      child: InkWell(  // ← GestureDetector 대신 InkWell 사용
-                                        onTap: () => _showTodoSelector(firstHalfKey),
-                                        onLongPress: firstHalfTodos.isNotEmpty ? () {
-                                          final todo = firstHalfTodos[0];
-                                          _showScheduleOptionsDialog(firstHalfKey, todo); // ← 이 부분 변경!
-                                        } : null,
-                                        child: Container(
-                                          width: double.infinity,
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.shade50,
-                                            border: Border(
-                                              bottom: BorderSide(
-                                                color: Colors.grey.shade200,
-                                                width: 0.5,
-                                              ),
+                                // 0-30분 슬롯 (개선된 탭 동작)
+                                Expanded(
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      // 🔧 수정된 탭 동작
+                                      onTap: () {
+                                        if (firstHalfTodos.isNotEmpty) {
+                                          // 일정이 있으면 바로 수정/삭제 옵션 표시
+                                          _showScheduleOptionsDialog(firstHalfKey, firstHalfTodos[0]);
+                                        } else {
+                                          // 일정이 없으면 새 일정 추가
+                                          _showTodoSelector(firstHalfKey);
+                                        }
+                                      },
+                                      // 길게 누르기는 제거 (이제 탭으로 통합)
+                                      child: Container(
+                                        width: double.infinity,
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade50,
+                                          border: Border(
+                                            bottom: BorderSide(
+                                              color: Colors.grey.shade200,
+                                              width: 0.5,
                                             ),
                                           ),
-                                          child: firstHalfTodos.isNotEmpty
-                                              ? Container(
+                                        ),
+                                        child: firstHalfTodos.isNotEmpty
+                                            ? Tooltip(
+                                                message: firstHalfTodos[0].text, // 툴팁으로 전체 텍스트 표시
+                                                waitDuration: const Duration(milliseconds: 500),
+                                                child: Container(
                                                   margin: const EdgeInsets.all(2),
-                                                  padding: const EdgeInsets.all(2),
+                                                  padding: const EdgeInsets.all(3),
                                                   decoration: BoxDecoration(
                                                     color: _getGroupById(firstHalfTodos[0].groupId)?.color ?? Colors.blue,
                                                     borderRadius: BorderRadius.circular(3),
@@ -2516,36 +2550,47 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                                                   child: Text(
                                                     firstHalfTodos[0].text,
                                                     style: const TextStyle(
-                                                      fontSize: 9,
+                                                      fontSize: 8, // 폰트 크기 조정
                                                       color: Colors.white,
                                                       fontWeight: FontWeight.w500,
+                                                      height: 1.1,
                                                     ),
-                                                    maxLines: 1,
+                                                    maxLines: 2, // 2줄까지 표시
                                                     overflow: TextOverflow.ellipsis,
                                                   ),
-                                                )
-                                              : null,
-                                        ),
+                                                ),
+                                              )
+                                            : null,
                                       ),
                                     ),
                                   ),
-                                // 30-60분 슬롯
+                                ),
+                                // 30-60분 슬롯 (동일한 방식으로 개선)
                                 Expanded(
-                                    child: Material(  // ← 이 부분 추가!
-                                      color: Colors.transparent,
-                                      child: InkWell(  // ← GestureDetector 대신 InkWell 사용
-                                        onTap: () => _showTodoSelector(secondHalfKey),
-                                        onLongPress: secondHalfTodos.isNotEmpty ? () {
-                                          final todo = secondHalfTodos[0];
-                                          _showScheduleOptionsDialog(secondHalfKey, todo); // ← 변경
-                                        } : null,
-                                        child: Container(
-                                          width: double.infinity,
-                                          color: Colors.grey.shade50,
-                                          child: secondHalfTodos.isNotEmpty
-                                              ? Container(
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      // 🔧 수정된 탭 동작
+                                      onTap: () {
+                                        if (secondHalfTodos.isNotEmpty) {
+                                          // 일정이 있으면 바로 수정/삭제 옵션 표시
+                                          _showScheduleOptionsDialog(secondHalfKey, secondHalfTodos[0]);
+                                        } else {
+                                          // 일정이 없으면 새 일정 추가
+                                          _showTodoSelector(secondHalfKey);
+                                        }
+                                      },
+                                      // 길게 누르기는 제거
+                                      child: Container(
+                                        width: double.infinity,
+                                        color: Colors.grey.shade50,
+                                        child: secondHalfTodos.isNotEmpty
+                                            ? Tooltip(
+                                                message: secondHalfTodos[0].text,
+                                                waitDuration: const Duration(milliseconds: 500),
+                                                child: Container(
                                                   margin: const EdgeInsets.all(2),
-                                                  padding: const EdgeInsets.all(2),
+                                                  padding: const EdgeInsets.all(3),
                                                   decoration: BoxDecoration(
                                                     color: _getGroupById(secondHalfTodos[0].groupId)?.color ?? Colors.blue,
                                                     borderRadius: BorderRadius.circular(3),
@@ -2553,19 +2598,21 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                                                   child: Text(
                                                     secondHalfTodos[0].text,
                                                     style: const TextStyle(
-                                                      fontSize: 9,
+                                                      fontSize: 8,
                                                       color: Colors.white,
                                                       fontWeight: FontWeight.w500,
+                                                      height: 1.1,
                                                     ),
-                                                    maxLines: 1,
+                                                    maxLines: 2,
                                                     overflow: TextOverflow.ellipsis,
                                                   ),
-                                                )
-                                              : null,
-                                        ),
+                                                ),
+                                              )
+                                            : null,
                                       ),
                                     ),
                                   ),
+                                ),
                               ],
                             ),
                           ),
@@ -2600,7 +2647,6 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
       final secondHalfTodos = scheduledTodos[secondHalfKey] ?? [];
       
       return Container(
-        // 시간별 경계선 추가
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
@@ -2613,7 +2659,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
           children: [
             Container(
               width: 80,
-              height: 120,
+              height: 140,
               decoration: BoxDecoration(
                 color: Colors.grey.shade100,
                 border: Border(
@@ -2637,17 +2683,19 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
             Expanded(
               child: Column(
                 children: [
-                  // 0-30분 슬롯
-                  Material(  // ← 이 부분 추가!
+                  // 0-30분 슬롯 (+ 아이콘 제거)
+                  Material(
                     color: Colors.transparent,
-                    child: InkWell(  // ← GestureDetector 대신 InkWell 사용
-                      onTap: () => _showTodoSelector(firstHalfKey),
-                     onLongPress: firstHalfTodos.isNotEmpty ? () {
-                          final todo = firstHalfTodos[0];
-                          _showScheduleOptionsDialog(firstHalfKey, todo); // ← 이 부분 변경!
-                        } : null,
+                    child: InkWell(
+                      onTap: () {
+                        if (firstHalfTodos.isNotEmpty) {
+                          _showScheduleOptionsDialog(firstHalfKey, firstHalfTodos[0]);
+                        } else {
+                          _showTodoSelector(firstHalfKey);
+                        }
+                      },
                       child: Container(
-                        height: 60,
+                        height: 70,
                         width: double.infinity,
                         decoration: BoxDecoration(
                           color: Colors.grey.shade50,
@@ -2664,6 +2712,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                           children: [
                             Container(
                               width: double.infinity,
+                              height: 22,
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: Colors.grey.shade200,
@@ -2684,54 +2733,59 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                               ),
                             ),
                             Expanded(
-                              child: firstHalfTodos.isEmpty
-                                  ? const Center(
-                                      child: Text(
-                                        '일정을 추가하려면 탭하세요',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey,
-                                          fontStyle: FontStyle.italic,
-                                        ),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(4),
+                                child: firstHalfTodos.isEmpty
+                                    ? null // 🔧 빈 공간 (+ 아이콘 제거)
+                                    : ListView.builder(
+                                        padding: EdgeInsets.zero,
+                                        itemCount: firstHalfTodos.length,
+                                        itemBuilder: (context, index) {
+                                          final todo = firstHalfTodos[index];
+                                          final group = _getGroupById(todo.groupId);
+                                          return Tooltip(
+                                            message: todo.text,
+                                            child: Container(
+                                              margin: const EdgeInsets.only(bottom: 2),
+                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: group?.color ?? Colors.blue,
+                                                borderRadius: BorderRadius.circular(3),
+                                              ),
+                                              child: Text(
+                                                todo.text,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          );
+                                        },
                                       ),
-                                    )
-                                  : ListView.builder(
-                                      padding: const EdgeInsets.all(8),
-                                      itemCount: firstHalfTodos.length,
-                                      itemBuilder: (context, index) {
-                                        final todo = firstHalfTodos[index];
-                                        final group = _getGroupById(todo.groupId);
-                                        return Container(
-                                          margin: const EdgeInsets.only(bottom: 3),
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: BoxDecoration(
-                                            color: group?.color ?? Colors.blue,
-                                            borderRadius: BorderRadius.circular(3),
-                                          ),
-                                          child: Text(
-                                            todo.text,
-                                            style: const TextStyle(color: Colors.white),
-                                          ),
-                                        );
-                                      },
-                                    ),
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ),
                   ),
-                  // 30-60분 슬롯
-                    Material(  // ← 이 부분 추가!
+                  // 30-60분 슬롯 (+ 아이콘 제거)
+                  Material(
                     color: Colors.transparent,
-                    child: InkWell(  // ← GestureDetector 대신 InkWell 사용
-                      onTap: () => _showTodoSelector(secondHalfKey),
-                      onLongPress: secondHalfTodos.isNotEmpty ? () {
-                        final todo = secondHalfTodos[0];
-                        _showScheduleOptionsDialog(secondHalfKey, todo); // ← 변경
-                      } : null,
+                    child: InkWell(
+                      onTap: () {
+                        if (secondHalfTodos.isNotEmpty) {
+                          _showScheduleOptionsDialog(secondHalfKey, secondHalfTodos[0]);
+                        } else {
+                          _showTodoSelector(secondHalfKey);
+                        }
+                      },
                       child: Container(
-                        height: 60,
+                        height: 70,
                         width: double.infinity,
                         decoration: BoxDecoration(
                           color: Colors.grey.shade50,
@@ -2744,6 +2798,7 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                           children: [
                             Container(
                               width: double.infinity,
+                              height: 22,
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: Colors.grey.shade200,
@@ -2764,37 +2819,40 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
                               ),
                             ),
                             Expanded(
-                              child: secondHalfTodos.isEmpty
-                                  ? const Center(
-                                      child: Text(
-                                        '일정을 추가하려면 탭하세요',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey,
-                                          fontStyle: FontStyle.italic,
-                                        ),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(4),
+                                child: secondHalfTodos.isEmpty
+                                    ? null // 🔧 빈 공간 (+ 아이콘 제거)
+                                    : ListView.builder(
+                                        padding: EdgeInsets.zero,
+                                        itemCount: secondHalfTodos.length,
+                                        itemBuilder: (context, index) {
+                                          final todo = secondHalfTodos[index];
+                                          final group = _getGroupById(todo.groupId);
+                                          return Tooltip(
+                                            message: todo.text,
+                                            child: Container(
+                                              margin: const EdgeInsets.only(bottom: 2),
+                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: group?.color ?? Colors.blue,
+                                                borderRadius: BorderRadius.circular(3),
+                                              ),
+                                              child: Text(
+                                                todo.text,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          );
+                                        },
                                       ),
-                                    )
-                                  : ListView.builder(
-                                      padding: const EdgeInsets.all(8),
-                                      itemCount: secondHalfTodos.length,
-                                      itemBuilder: (context, index) {
-                                        final todo = secondHalfTodos[index];
-                                        final group = _getGroupById(todo.groupId);
-                                        return Container(
-                                          margin: const EdgeInsets.only(bottom: 3),
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: BoxDecoration(
-                                            color: group?.color ?? Colors.blue,
-                                            borderRadius: BorderRadius.circular(3),
-                                          ),
-                                          child: Text(
-                                            todo.text,
-                                            style: const TextStyle(color: Colors.white),
-                                          ),
-                                        );
-                                      },
-                                    ),
+                              ),
                             ),
                           ],
                         ),
@@ -2811,7 +2869,8 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
   );
 }
 
-  Widget _buildTodoSelectorModal() {
+  // 🔧 _buildTodoSelectorModal 함수 완전 교체
+Widget _buildTodoSelectorModal() {
   // 그룹별 펼침 상태 초기화 (한 번만)
   for (final group in todoGroups) {
     selectorExpandedGroups.putIfAbsent(group.id, () => true);
@@ -2821,10 +2880,10 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
     title: const Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('할 일 선택'),
+        Text('일정 추가'),
         SizedBox(height: 5),
         Text(
-          '일정에 추가할 할 일을 선택하세요',
+          '기존 할 일을 선택하거나 새로운 할 일을 작성하세요',
           style: TextStyle(
             fontSize: 14,
             color: Colors.grey,
@@ -2835,228 +2894,55 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
     ),
     content: SizedBox(
       width: double.maxFinite,
-      height: 400,
-      child: Column(
-        children: [
-          // 전체 펼치기/접기 버튼
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    for (final group in todoGroups) {
-                      selectorExpandedGroups[group.id] = true;
-                    }
-                  });
-                },
-                icon: const Icon(Icons.expand_more, size: 16),
-                label: const Text('전체 펼치기'),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.primary,
+      height: 500,
+      child: DefaultTabController(
+        length: 2,
+        child: Column(
+          children: [
+            // 탭 바
+            TabBar(
+              labelColor: AppColors.primary,
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: AppColors.primary,
+              tabs: const [
+                Tab(
+                  icon: Icon(Icons.list),
+                  text: '기존 할 일',
                 ),
-              ),
-              TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    for (final group in todoGroups) {
-                      selectorExpandedGroups[group.id] = false;
-                    }
-                  });
-                },
-                icon: const Icon(Icons.expand_less, size: 16),
-                label: const Text('전체 접기'),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.secondary,
+                Tab(
+                  icon: Icon(Icons.add),
+                  text: '새 할 일',
                 ),
-              ),
-            ],
-          ),
-          const Divider(),
-          
-          // 그룹별 할 일 목록
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: todoGroups.map((group) {
-                  final groupTodos = todos.where((todo) => todo.groupId == group.id).toList();
-                  if (groupTodos.isEmpty) return const SizedBox.shrink();
+              ],
+            ),
+            const SizedBox(height: 10),
+            
+            // 탭 뷰
+            Expanded(
+              child: TabBarView(
+                children: [
+                  // 🔧 첫 번째 탭: 기존 할 일 선택
+                  _buildExistingTodoTab(),
                   
-                  final isExpanded = selectorExpandedGroups[group.id] ?? true;
-                  
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(
-                      color: group.color.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: group.color.withOpacity(0.2)),
-                    ),
-                    child: Column(
-                      children: [
-                        // 그룹 헤더 (클릭 가능)
-                        InkWell(
-                          onTap: () {
-                            setState(() {
-                              selectorExpandedGroups[group.id] = !isExpanded;
-                            });
-                          },
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(8),
-                            topRight: Radius.circular(8),
-                          ),
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: group.color.withOpacity(0.1),
-                              borderRadius: const BorderRadius.only(
-                                topLeft: Radius.circular(8),
-                                topRight: Radius.circular(8),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                // 펼침/접힘 아이콘
-                                Icon(
-                                  isExpanded 
-                                      ? Icons.keyboard_arrow_down 
-                                      : Icons.keyboard_arrow_right,
-                                  color: group.color,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                // 그룹 색상 인디케이터
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: group.color,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                // 그룹명과 개수
-                                Expanded(
-                                  child: Text(
-                                    '${group.name} (${groupTodos.length}개)',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                                // 그룹 전체 선택 버튼 (옵션)
-                                if (isExpanded && groupTodos.isNotEmpty)
-                                  TextButton(
-                                    onPressed: () {
-                                      // 랜덤으로 그룹의 첫 번째 할 일 선택
-                                      _addTodoToSchedule(groupTodos.first, selectedScheduleKey);
-                                      setState(() {
-                                        showTodoSelectorModal = false;
-                                      });
-                                    },
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: group.color,
-                                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    ),
-                                    child: const Text(
-                                      '첫 번째 선택',
-                                      style: TextStyle(fontSize: 10),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        
-                        // 할 일 목록 (접혔을 때는 숨김)
-                        if (isExpanded) ...[
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            child: Column(
-                              children: groupTodos.map((todo) {
-                                return InkWell(
-                                  onTap: () {
-                                    _addTodoToSchedule(todo, selectedScheduleKey);
-                                    setState(() {
-                                      showTodoSelectorModal = false;
-                                    });
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      border: Border(
-                                        bottom: BorderSide(
-                                          color: group.color.withOpacity(0.1),
-                                          width: 0.5,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        // 세로 구분선
-                                        Container(
-                                          width: 3,
-                                          height: 30,
-                                          decoration: BoxDecoration(
-                                            color: group.color,
-                                            borderRadius: BorderRadius.circular(2),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        // 할 일 내용
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                todo.text,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '생성일: ${todo.createdAt.month}/${todo.createdAt.day}',
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        // 선택 아이콘
-                                        Icon(
-                                          Icons.add_circle_outline,
-                                          color: group.color,
-                                          size: 20,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  );
-                }).toList(),
+                  // 🔧 두 번째 탭: 새 할 일 작성
+                  _buildNewTodoTab(),
+                ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
     actions: [
       TextButton(
         onPressed: () {
+          // 🔧 모달 닫을 때 상태 초기화
           setState(() {
             showTodoSelectorModal = false;
+            newTodoTextInSelector = '';
+            selectedGroupIdInSelector = '';
           });
+          newTodoSelectorController.clear();
         },
         child: const Text(
           '취소',
@@ -3064,6 +2950,380 @@ void _showDeleteEventDialog(String dateKey, Todo todo) {
         ),
       ),
     ],
+  );
+}
+
+Widget _buildExistingTodoTab() {
+  return Column(
+    children: [
+      // 전체 펼치기/접기 버튼
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          TextButton.icon(
+            onPressed: () {
+              setState(() {
+                for (final group in todoGroups) {
+                  selectorExpandedGroups[group.id] = true;
+                }
+              });
+            },
+            icon: const Icon(Icons.expand_more, size: 16),
+            label: const Text('전체 펼치기'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primary,
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () {
+              setState(() {
+                for (final group in todoGroups) {
+                  selectorExpandedGroups[group.id] = false;
+                }
+              });
+            },
+            icon: const Icon(Icons.expand_less, size: 16),
+            label: const Text('전체 접기'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.secondary,
+            ),
+          ),
+        ],
+      ),
+      const Divider(),
+      
+      // 할 일이 없을 때 안내 메시지
+      if (todos.isEmpty)
+        const Expanded(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.inbox,
+                  size: 48,
+                  color: Colors.grey,
+                ),
+                SizedBox(height: 10),
+                Text(
+                  '등록된 할 일이 없습니다',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 16,
+                  ),
+                ),
+                SizedBox(height: 5),
+                Text(
+                  '"새 할 일" 탭에서 할 일을 먼저 작성해보세요',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      
+      // 그룹별 할 일 목록
+      if (todos.isNotEmpty)
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(
+              children: todoGroups.map((group) {
+                final groupTodos = todos.where((todo) => todo.groupId == group.id).toList();
+                if (groupTodos.isEmpty) return const SizedBox.shrink();
+                
+                final isExpanded = selectorExpandedGroups[group.id] ?? true;
+                
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: group.color.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: group.color.withOpacity(0.2)),
+                  ),
+                  child: Column(
+                    children: [
+                      // 그룹 헤더
+                      InkWell(
+                        onTap: () {
+                          setState(() {
+                            selectorExpandedGroups[group.id] = !isExpanded;
+                          });
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: group.color.withOpacity(0.1),
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(8),
+                              topRight: Radius.circular(8),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isExpanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right,
+                                color: group.color,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: group.color,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  '${group.name} (${groupTodos.length}개)',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      
+                      // 할 일 목록
+                      if (isExpanded)
+                        Column(
+                          children: groupTodos.map((todo) {
+                            return InkWell(
+                              onTap: () {
+                                _addTodoToSchedule(todo, selectedScheduleKey);
+                                setState(() {
+                                  showTodoSelectorModal = false;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: group.color.withOpacity(0.1),
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 3,
+                                      height: 30,
+                                      decoration: BoxDecoration(
+                                        color: group.color,
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            todo.text,
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '생성일: ${todo.createdAt.month}/${todo.createdAt.day}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.add_circle_outline,
+                                      color: group.color,
+                                      size: 20,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
+Widget _buildNewTodoTab() {
+  return SingleChildScrollView(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 할 일 입력
+        const Text(
+          '새 할 일',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: newTodoSelectorController,
+          decoration: InputDecoration(
+            hintText: '할 일을 입력하세요 (최대 100자)',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            filled: true,
+            fillColor: Colors.grey.shade100,
+            counterText: '${newTodoTextInSelector.length}/100',
+          ),
+          maxLines: 3,
+          maxLength: 100,
+          onChanged: (value) {
+            setState(() {
+              newTodoTextInSelector = value;
+            });
+          },
+        ),
+        const SizedBox(height: 20),
+        
+        // 그룹 선택
+        const Text(
+          '그룹 선택',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: todoGroups.map((group) {
+            final isSelected = selectedGroupIdInSelector == group.id;
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  selectedGroupIdInSelector = group.id;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? group.color.withOpacity(0.2) : Colors.white,
+                  border: Border.all(
+                    color: group.color,
+                    width: isSelected ? 3 : 2,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: group.color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      group.name,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isSelected ? group.color : Colors.grey.shade600,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 20),
+        
+        // 추가 버튼
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: (newTodoTextInSelector.trim().isEmpty || selectedGroupIdInSelector.isEmpty)
+                ? null
+                : () {
+                    // 🔧 새 할 일 생성 및 일정에 추가
+                    final newTodo = Todo(
+                      id: DateTime.now().millisecondsSinceEpoch,
+                      text: newTodoTextInSelector.trim(),
+                      completed: false,
+                      groupId: selectedGroupIdInSelector,
+                    );
+                    
+                    // 할 일 목록에 추가
+                    setState(() {
+                      todos.add(newTodo);
+                    });
+                    _saveData();
+                    
+                    // 일정에 추가
+                    _addTodoToSchedule(newTodo, selectedScheduleKey);
+                    
+                    // 모달 닫기 및 상태 초기화
+                    setState(() {
+                      showTodoSelectorModal = false;
+                      newTodoTextInSelector = '';
+                      selectedGroupIdInSelector = '';
+                    });
+                    newTodoSelectorController.clear();
+                    
+                    // 성공 메시지
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('새 할 일이 생성되고 일정에 추가되었습니다!'),
+                        backgroundColor: AppColors.primary,
+                      ),
+                    );
+                  },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              disabledBackgroundColor: Colors.grey.shade300,
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(
+              '할 일 생성 및 일정 추가',
+              style: TextStyle(
+                color: (newTodoTextInSelector.trim().isEmpty || selectedGroupIdInSelector.isEmpty)
+                    ? Colors.grey.shade600
+                    : Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
   );
 }
 
@@ -4047,10 +4307,11 @@ void _debugScheduleState(String scheduleKey) {
 }
 
   @override
-  void dispose() {
-    newTodoController.dispose();
-    super.dispose();
-  }
+void dispose() {
+  newTodoController.dispose();
+  newTodoSelectorController.dispose(); // 🔧 이 줄 추가
+  super.dispose();
+}
 
   Widget _buildStatsItem(String label, String value, Color color) {
     return Column(
